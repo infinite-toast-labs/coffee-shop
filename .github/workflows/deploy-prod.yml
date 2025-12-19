@@ -79,12 +79,11 @@ jobs:
 
           npx wrangler d1 migrations apply DB --remote --config wrangler.ci.toml
           upload_log=$(mktemp)
-          upload_json=$(mktemp)
           upload_version() {
             npx wrangler versions upload --config wrangler.ci.toml \
               --tag "${{ steps.names.outputs.tag }}" \
               --message "Prod backend ${GITHUB_SHA::7}" \
-              --json > "$upload_json" 2> "$upload_log"
+              > "$upload_log" 2>&1
           }
 
           if ! upload_version; then
@@ -98,8 +97,13 @@ jobs:
             fi
           fi
 
-          VERSION_ID=$(node -e 'const fs=require("fs");const path=process.argv[1];const data=JSON.parse(fs.readFileSync(path,"utf8"));const id=data.id||data.version_id||data.versionId||data?.version?.id; if(!id){console.error("Version id not found in upload output");process.exit(1);} console.log(id);' "$upload_json")
-          rm -f "$upload_log" "$upload_json"
+          VERSION_ID=$(rg -o "Worker Version ID: ([a-f0-9-]+)" -r '$1' "$upload_log" | head -n 1)
+          if [[ -z "${VERSION_ID:-}" ]]; then
+            echo "Version id not found in upload output"
+            cat "$upload_log"
+            exit 1
+          fi
+          rm -f "$upload_log"
 
           npx wrangler versions deploy --name "${{ steps.names.outputs.backend }}" --version-id "$VERSION_ID" \
             --message "Deploy main@${GITHUB_SHA::7}"
@@ -128,12 +132,11 @@ jobs:
             --compatibility-date "${WORKERS_COMPATIBILITY_DATE}"
 
           upload_log=$(mktemp)
-          upload_json=$(mktemp)
           upload_version() {
             npx wrangler versions upload --config wrangler.ci.toml \
               --tag "${{ steps.names.outputs.tag }}" \
               --message "Prod frontend ${GITHUB_SHA::7}" \
-              --json > "$upload_json" 2> "$upload_log"
+              > "$upload_log" 2>&1
           }
 
           if ! upload_version; then
@@ -147,8 +150,13 @@ jobs:
             fi
           fi
 
-          VERSION_ID=$(node -e 'const fs=require("fs");const path=process.argv[1];const data=JSON.parse(fs.readFileSync(path,"utf8"));const id=data.id||data.version_id||data.versionId||data?.version?.id; if(!id){console.error("Version id not found in upload output");process.exit(1);} console.log(id);' "$upload_json")
-          rm -f "$upload_log" "$upload_json"
+          VERSION_ID=$(rg -o "Worker Version ID: ([a-f0-9-]+)" -r '$1' "$upload_log" | head -n 1)
+          if [[ -z "${VERSION_ID:-}" ]]; then
+            echo "Version id not found in upload output"
+            cat "$upload_log"
+            exit 1
+          fi
+          rm -f "$upload_log"
 
           npx wrangler versions deploy --name "${{ steps.names.outputs.frontend }}" --version-id "$VERSION_ID" \
             --message "Deploy main@${GITHUB_SHA::7}"
