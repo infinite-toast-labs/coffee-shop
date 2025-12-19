@@ -99,7 +99,7 @@ jobs:
             fi
           fi
 
-          VERSION_ID=$(rg -o "Worker Version ID: ([a-f0-9-]+)" -r '$1' "$upload_log" | head -n 1)
+          VERSION_ID=$(sed -n 's/.*Worker Version ID: \([a-f0-9-]*\).*/\1/p' "$upload_log" | head -n 1)
           if [[ -z "${VERSION_ID:-}" ]]; then
             echo "Version id not found in upload output"
             cat "$upload_log"
@@ -152,7 +152,7 @@ jobs:
             fi
           fi
 
-          VERSION_ID=$(rg -o "Worker Version ID: ([a-f0-9-]+)" -r '$1' "$upload_log" | head -n 1)
+          VERSION_ID=$(sed -n 's/.*Worker Version ID: \([a-f0-9-]*\).*/\1/p' "$upload_log" | head -n 1)
           if [[ -z "${VERSION_ID:-}" ]]; then
             echo "Version id not found in upload output"
             cat "$upload_log"
