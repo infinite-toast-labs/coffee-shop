@@ -78,18 +78,36 @@ jobs:
             --r2-bucket-name "${COFFEE_ASSETS_R2_BUCKET_NAME}"
 
           npx wrangler d1 migrations apply DB --remote --config wrangler.ci.toml
-          npx wrangler versions upload --config wrangler.ci.toml \
-            --tag "${{ steps.names.outputs.tag }}" \
-            --message "Prod backend ${GITHUB_SHA::7}"
+          upload_log=$(mktemp)
+          upload_version() {
+            npx wrangler versions upload --config wrangler.ci.toml \
+              --tag "${{ steps.names.outputs.tag }}" \
+              --message "Prod backend ${GITHUB_SHA::7}" \
+              > "$upload_log" 2>&1
+          }
 
-          VERSION_ID=$(npx wrangler versions list --name "${{ steps.names.outputs.backend }}" --json | \
-            node -e 'const fs=require("fs");const tag=process.env.TAG;const data=JSON.parse(fs.readFileSync(0,"utf8"));const match=data.find(v=>v.tag===tag||v.tag?.name===tag);if(!match){console.error("Version tag not found");process.exit(1);}const id=match.id||match.version_id||match.versionId;if(!id){console.error("Version id not found");process.exit(1);}console.log(id);' \
-          )
+          if ! upload_version; then
+            if grep -E "does not exist|10007" "$upload_log"; then
+              echo "Worker missing. Bootstrapping with wrangler deploy."
+              npx wrangler deploy --config wrangler.ci.toml
+              upload_version
+            else
+              cat "$upload_log"
+              exit 1
+            fi
+          fi
+
+          VERSION_ID=$(sed -n 's/.*Worker Version ID: \([a-f0-9-]*\).*/\1/p' "$upload_log" | head -n 1)
+          if [[ -z "${VERSION_ID:-}" ]]; then
+            echo "Version id not found in upload output"
+            cat "$upload_log"
+            exit 1
+          fi
+          rm -f "$upload_log"
 
           npx wrangler versions deploy --name "${{ steps.names.outputs.backend }}" --version-id "$VERSION_ID" \
+            --percentage 100 --yes \
             --message "Deploy main@${GITHUB_SHA::7}"
-        env:
-          TAG: ${{ steps.names.outputs.tag }}
 
       - name: Build frontend (production)
         shell: bash
@@ -102,6 +120,7 @@ jobs:
           EOF
 
           npm run build
+          echo "_worker.js/" > dist/.assetsignore
 
       - name: Deploy frontend (production)
         shell: bash
@@ -114,18 +133,38 @@ jobs:
             --workers-dev true \
             --compatibility-date "${WORKERS_COMPATIBILITY_DATE}"
 
-          npx wrangler versions upload --config wrangler.ci.toml \
-            --tag "${{ steps.names.outputs.tag }}" \
-            --message "Prod frontend ${GITHUB_SHA::7}"
+          npx wrangler deploy --config wrangler.ci.toml
 
-          VERSION_ID=$(npx wrangler versions list --name "${{ steps.names.outputs.frontend }}" --json | \
-            node -e 'const fs=require("fs");const tag=process.env.TAG;const data=JSON.parse(fs.readFileSync(0,"utf8"));const match=data.find(v=>v.tag===tag||v.tag?.name===tag);if(!match){console.error("Version tag not found");process.exit(1);}const id=match.id||match.version_id||match.versionId;if(!id){console.error("Version id not found");process.exit(1);}console.log(id);' \
-          )
+          upload_log=$(mktemp)
+          upload_version() {
+            npx wrangler versions upload --config wrangler.ci.toml \
+              --tag "${{ steps.names.outputs.tag }}" \
+              --message "Prod frontend ${GITHUB_SHA::7}" \
+              > "$upload_log" 2>&1
+          }
+
+          if ! upload_version; then
+            if grep -E "does not exist|10007" "$upload_log"; then
+              echo "Worker missing. Bootstrapping with wrangler deploy."
+              npx wrangler deploy --config wrangler.ci.toml
+              upload_version
+            else
+              cat "$upload_log"
+              exit 1
+            fi
+          fi
+
+          VERSION_ID=$(sed -n 's/.*Worker Version ID: \([a-f0-9-]*\).*/\1/p' "$upload_log" | head -n 1)
+          if [[ -z "${VERSION_ID:-}" ]]; then
+            echo "Version id not found in upload output"
+            cat "$upload_log"
+            exit 1
+          fi
+          rm -f "$upload_log"
 
           npx wrangler versions deploy --name "${{ steps.names.outputs.frontend }}" --version-id "$VERSION_ID" \
+            --percentage 100 --yes \
             --message "Deploy main@${GITHUB_SHA::7}"
-        env:
-          TAG: ${{ steps.names.outputs.tag }}
 
       - name: Production URLs
         run: |
