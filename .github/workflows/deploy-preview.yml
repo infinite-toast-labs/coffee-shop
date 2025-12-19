@@ -81,31 +81,30 @@ jobs:
 
           npx wrangler d1 migrations apply DB --remote --config wrangler.ci.toml
           upload_log=$(mktemp)
-          if ! npx wrangler versions upload --config wrangler.ci.toml \
-            --tag "${{ steps.names.outputs.tag }}" \
-            --message "Preview backend ${GITHUB_REF_NAME}@${GITHUB_SHA::7}" \
-            2> "$upload_log"; then
+          upload_json=$(mktemp)
+          upload_version() {
+            npx wrangler versions upload --config wrangler.ci.toml \
+              --tag "${{ steps.names.outputs.tag }}" \
+              --message "Preview backend ${GITHUB_REF_NAME}@${GITHUB_SHA::7}" \
+              --json > "$upload_json" 2> "$upload_log"
+          }
+
+          if ! upload_version; then
             if grep -E "does not exist|10007" "$upload_log"; then
               echo "Worker missing. Bootstrapping with wrangler deploy."
               npx wrangler deploy --config wrangler.ci.toml
-              npx wrangler versions upload --config wrangler.ci.toml \
-                --tag "${{ steps.names.outputs.tag }}" \
-                --message "Preview backend ${GITHUB_REF_NAME}@${GITHUB_SHA::7}"
+              upload_version
             else
               cat "$upload_log"
               exit 1
             fi
           fi
-          rm -f "$upload_log"
 
-          VERSION_ID=$(npx wrangler versions list --name "${{ steps.names.outputs.backend }}" --json | \
-            node -e 'const fs=require("fs");const tag=process.env.TAG;const data=JSON.parse(fs.readFileSync(0,"utf8"));const match=data.find(v=>v.tag===tag||v.tag?.name===tag);if(!match){console.error("Version tag not found");process.exit(1);}const id=match.id||match.version_id||match.versionId;if(!id){console.error("Version id not found");process.exit(1);}console.log(id);' \
-          )
+          VERSION_ID=$(node -e 'const fs=require("fs");const path=process.argv[1];const data=JSON.parse(fs.readFileSync(path,"utf8"));const id=data.id||data.version_id||data.versionId||data?.version?.id; if(!id){console.error("Version id not found in upload output");process.exit(1);} console.log(id);' "$upload_json")
+          rm -f "$upload_log" "$upload_json"
 
           npx wrangler versions deploy --name "${{ steps.names.outputs.backend }}" --version-id "$VERSION_ID" \
             --message "Deploy ${GITHUB_REF_NAME}@${GITHUB_SHA::7}"
-        env:
-          TAG: ${{ steps.names.outputs.tag }}
 
       - name: Build frontend (preview)
         shell: bash
@@ -131,31 +130,30 @@ jobs:
             --compatibility-date "${WORKERS_COMPATIBILITY_DATE}"
 
           upload_log=$(mktemp)
-          if ! npx wrangler versions upload --config wrangler.ci.toml \
-            --tag "${{ steps.names.outputs.tag }}" \
-            --message "Preview frontend ${GITHUB_REF_NAME}@${GITHUB_SHA::7}" \
-            2> "$upload_log"; then
+          upload_json=$(mktemp)
+          upload_version() {
+            npx wrangler versions upload --config wrangler.ci.toml \
+              --tag "${{ steps.names.outputs.tag }}" \
+              --message "Preview frontend ${GITHUB_REF_NAME}@${GITHUB_SHA::7}" \
+              --json > "$upload_json" 2> "$upload_log"
+          }
+
+          if ! upload_version; then
             if grep -E "does not exist|10007" "$upload_log"; then
               echo "Worker missing. Bootstrapping with wrangler deploy."
               npx wrangler deploy --config wrangler.ci.toml
-              npx wrangler versions upload --config wrangler.ci.toml \
-                --tag "${{ steps.names.outputs.tag }}" \
-                --message "Preview frontend ${GITHUB_REF_NAME}@${GITHUB_SHA::7}"
+              upload_version
             else
               cat "$upload_log"
               exit 1
             fi
           fi
-          rm -f "$upload_log"
 
-          VERSION_ID=$(npx wrangler versions list --name "${{ steps.names.outputs.frontend }}" --json | \
-            node -e 'const fs=require("fs");const tag=process.env.TAG;const data=JSON.parse(fs.readFileSync(0,"utf8"));const match=data.find(v=>v.tag===tag||v.tag?.name===tag);if(!match){console.error("Version tag not found");process.exit(1);}const id=match.id||match.version_id||match.versionId;if(!id){console.error("Version id not found");process.exit(1);}console.log(id);' \
-          )
+          VERSION_ID=$(node -e 'const fs=require("fs");const path=process.argv[1];const data=JSON.parse(fs.readFileSync(path,"utf8"));const id=data.id||data.version_id||data.versionId||data?.version?.id; if(!id){console.error("Version id not found in upload output");process.exit(1);} console.log(id);' "$upload_json")
+          rm -f "$upload_log" "$upload_json"
 
           npx wrangler versions deploy --name "${{ steps.names.outputs.frontend }}" --version-id "$VERSION_ID" \
             --message "Deploy ${GITHUB_REF_NAME}@${GITHUB_SHA::7}"
-        env:
-          TAG: ${{ steps.names.outputs.tag }}
 
       - name: Preview URLs
         run: |
