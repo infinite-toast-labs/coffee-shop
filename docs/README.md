@@ -10,6 +10,7 @@ It ships two Workers: an Astro frontend and a Hono API backend, plus shared prev
 - **D1** (`DB`) - message storage
 - **KV** (`CACHE`) - short-lived message cache
 - **R2** (`ASSETS`) - text storage demo
+- **Workers AI** (`AI`) - daily special generator (llama-3.3-70b-instruct-fp8-fast)
 
 ## Repo layout
 
@@ -90,6 +91,12 @@ Each environment has its own set of resources:
   - R2 bucket
 
 Only one set per environment, as required.
+
+## Workers AI
+
+The backend exposes `POST /api/ai/special`, backed by the `AI` binding and
+model `@cf/meta/llama-3.3-70b-instruct-fp8-fast`. No secrets are committed; the
+binding is configured in Wrangler and CI-generated configs.
 
 ## Secrets and variables
 

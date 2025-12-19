@@ -2,7 +2,7 @@
 import BaseLayout from "../layouts/BaseLayout.astro";
 
 const title = "Coffee Shop Demo";
-const description = "Minimal Cloudflare Workers demo with D1, KV, and R2.";
+const description = "Minimal Cloudflare Workers demo with D1, KV, R2, and Workers AI.";
 const apiBase = import.meta.env.PUBLIC_API_BASE ?? "http://localhost:8787";
 const permalink = Astro.url.href;
 ---
@@ -39,6 +39,62 @@ const permalink = Astro.url.href;
         <p id="asset-status" class="status"></p>
       </form>
     </div>
+
+    <div class="card">
+      <h2>Daily special (Workers AI)</h2>
+      <form id="special-form">
+        <label for="special-season">Season</label>
+        <select id="special-season" name="season">
+          <option value="any">Any</option>
+          <option value="spring">Spring</option>
+          <option value="summer">Summer</option>
+          <option value="autumn">Autumn</option>
+          <option value="winter">Winter</option>
+        </select>
+        <label for="special-caffeine">Caffeine</label>
+        <select id="special-caffeine" name="caffeine">
+          <option value="full">Full</option>
+          <option value="half">Half-caf</option>
+          <option value="decaf">Decaf</option>
+        </select>
+        <label for="special-prep">Prep time (minutes)</label>
+        <select id="special-prep" name="prepTimeMinutes">
+          <option value="3">3</option>
+          <option value="5">5</option>
+          <option value="7" selected>7</option>
+          <option value="10">10</option>
+          <option value="15">15</option>
+        </select>
+        <label for="special-notes">Notes (optional)</label>
+        <input
+          id="special-notes"
+          name="notes"
+          type="text"
+          placeholder="e.g., nut-free, citrus, cozy"
+          maxlength="120"
+        />
+        <button type="submit">Generate special</button>
+        <p id="special-status" class="status"></p>
+      </form>
+      <div id="special-output" class="special-output" hidden>
+        <div class="special-header">
+          <h3 id="special-name"></h3>
+          <span id="special-price"></span>
+        </div>
+        <p id="special-description"></p>
+        <div class="special-lists">
+          <div>
+            <h4>Ingredients</h4>
+            <ul id="special-ingredients"></ul>
+          </div>
+          <div>
+            <h4>Steps</h4>
+            <ol id="special-steps"></ol>
+          </div>
+        </div>
+        <p id="special-meta" class="special-meta"></p>
+      </div>
+    </div>
     </section>
 
     <section class="panel">
@@ -74,6 +130,19 @@ const permalink = Astro.url.href;
   const assetFetchForm = document.querySelector("#asset-fetch-form");
   const assetFetchKey = document.querySelector("#asset-fetch-key");
   const assetOutput = document.querySelector("#asset-output");
+  const specialForm = document.querySelector("#special-form");
+  const specialSeason = document.querySelector("#special-season");
+  const specialCaffeine = document.querySelector("#special-caffeine");
+  const specialPrep = document.querySelector("#special-prep");
+  const specialNotes = document.querySelector("#special-notes");
+  const specialStatus = document.querySelector("#special-status");
+  const specialOutput = document.querySelector("#special-output");
+  const specialName = document.querySelector("#special-name");
+  const specialPrice = document.querySelector("#special-price");
+  const specialDescription = document.querySelector("#special-description");
+  const specialIngredients = document.querySelector("#special-ingredients");
+  const specialSteps = document.querySelector("#special-steps");
+  const specialMeta = document.querySelector("#special-meta");
 
   const requestJson = async (path, options = {}) => {
     const response = await fetch(`${apiBase}${path}`, {
@@ -101,6 +170,12 @@ const permalink = Astro.url.href;
         "Database not initialized for this environment. Run D1 migrations and redeploy.";
       console.warn("D1 not ready:", error.detail || error);
       return message;
+    }
+    if (error?.code === "AI_NOT_READY") {
+      return "Workers AI is not configured yet for this environment.";
+    }
+    if (error?.code === "AI_BAD_RESPONSE") {
+      return "AI returned an unexpected result. Try again in a moment.";
     }
 
     console.error("API error:", error);
@@ -177,6 +252,57 @@ const permalink = Astro.url.href;
     }
   });
 
+  const renderSpecial = (special, cached, prepTimeMinutes) => {
+    specialName.textContent = special.name;
+    specialPrice.textContent = special.price;
+    specialDescription.textContent = special.description;
+    specialIngredients.innerHTML = "";
+    specialSteps.innerHTML = "";
+    (special.ingredients || []).forEach((ingredient) => {
+      const li = document.createElement("li");
+      li.textContent = ingredient;
+      specialIngredients.appendChild(li);
+    });
+    (special.steps || []).forEach((step) => {
+      const li = document.createElement("li");
+      li.textContent = step;
+      specialSteps.appendChild(li);
+    });
+    const generatedAt = special.generated_at
+      ? new Date(special.generated_at).toLocaleString()
+      : "just now";
+    const prepText = Number.isFinite(prepTimeMinutes)
+      ? `Prep: ${prepTimeMinutes} min`
+      : "";
+    const cacheText = cached ? "Cached" : "Fresh";
+    specialMeta.textContent = [generatedAt, cacheText, prepText].filter(Boolean).join(" • ");
+    specialOutput.hidden = false;
+  };
+
+  specialForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    specialStatus.textContent = "Generating...";
+    specialOutput.hidden = true;
+    try {
+      const prepTimeMinutes = Number.parseInt(specialPrep.value, 10);
+      const payload = await requestJson("/api/ai/special", {
+        method: "POST",
+        body: JSON.stringify({
+          season: specialSeason.value,
+          caffeine: specialCaffeine.value,
+          prepTimeMinutes,
+          notes: specialNotes.value,
+        }),
+      });
+      renderSpecial(payload.special, payload.cached, prepTimeMinutes);
+      specialStatus.textContent = payload.cached
+        ? "Loaded from cache."
+        : "Freshly generated.";
+    } catch (error) {
+      specialStatus.textContent = handleApiError(error, "Failed to generate special.");
+    }
+  });
+
   loadMessages();
 </script>
 
@@ -220,7 +346,8 @@ const permalink = Astro.url.href;
   }
 
   input,
-  textarea {
+  textarea,
+  select {
     border: 1px solid #d6c4ae;
     border-radius: 8px;
     font-size: 1rem;
@@ -286,6 +413,52 @@ const permalink = Astro.url.href;
     min-height: 120px;
     padding: 1rem;
     white-space: pre-wrap;
+  }
+
+  .special-output {
+    background: #fff7ec;
+    border: 1px solid #e8d5be;
+    border-radius: 12px;
+    margin-top: 1rem;
+    padding: 1rem;
+  }
+
+  .special-output[hidden] {
+    display: none;
+  }
+
+  .special-header {
+    align-items: baseline;
+    display: flex;
+    gap: 1rem;
+    justify-content: space-between;
+  }
+
+  .special-header h3 {
+    margin: 0;
+  }
+
+  #special-price {
+    color: #6b3f2c;
+    font-size: 1.1rem;
+    font-weight: 700;
+  }
+
+  .special-lists {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    margin-top: 1rem;
+  }
+
+  .special-lists h4 {
+    margin: 0 0 0.5rem;
+  }
+
+  .special-meta {
+    color: #6f5a4a;
+    font-size: 0.85rem;
+    margin-top: 0.75rem;
   }
 
   @media (max-width: 700px) {

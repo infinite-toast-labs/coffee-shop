@@ -83,6 +83,7 @@ const main = () => {
       `main = ${tomlString("./src/index.ts")}`,
       `compatibility_date = ${tomlString(compatibilityDate)}`,
       `workers_dev = ${workersDev ? "true" : "false"}`,
+      `ai = { binding = "AI" }`,
       "",
       "[vars]",
       `APP_ORIGIN = ${tomlString(appOrigin)}`,

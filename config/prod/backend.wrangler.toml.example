@@ -2,6 +2,7 @@ name = "coffee-shop-backend"
 main = "../../app-backend/src/index.ts"
 compatibility_date = "2025-02-15"
 workers_dev = true
+ai = { binding = "AI" }
 
 [vars]
 APP_ORIGIN = "https://frontend.example.workers.dev"

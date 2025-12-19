@@ -2,6 +2,7 @@ export type Bindings = {
   DB: D1Database;
   CACHE: KVNamespace;
   ASSETS: R2Bucket;
+  AI: Ai;
   APP_ORIGIN: string;
   API_ORIGIN: string;
 };
