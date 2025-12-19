@@ -108,6 +108,7 @@ jobs:
           rm -f "$upload_log"
 
           npx wrangler versions deploy --name "${{ steps.names.outputs.backend }}" --version-id "$VERSION_ID" \
+            --percentage 100 --yes \
             --message "Deploy ${GITHUB_REF_NAME}@${GITHUB_SHA::7}"
 
       - name: Build frontend (preview)
@@ -133,6 +134,8 @@ jobs:
             --name "${{ steps.names.outputs.frontend }}" \
             --workers-dev true \
             --compatibility-date "${WORKERS_COMPATIBILITY_DATE}"
+
+          npx wrangler deploy --config wrangler.ci.toml
 
           upload_log=$(mktemp)
           upload_version() {
@@ -162,6 +165,7 @@ jobs:
           rm -f "$upload_log"
 
           npx wrangler versions deploy --name "${{ steps.names.outputs.frontend }}" --version-id "$VERSION_ID" \
+            --percentage 100 --yes \
             --message "Deploy ${GITHUB_REF_NAME}@${GITHUB_SHA::7}"
 
       - name: Preview URLs
