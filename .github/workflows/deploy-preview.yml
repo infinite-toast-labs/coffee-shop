@@ -121,6 +121,7 @@ jobs:
           EOF
 
           npm run build
+          echo "_worker.js/" > dist/.assetsignore
 
       - name: Deploy frontend (preview)
         shell: bash
