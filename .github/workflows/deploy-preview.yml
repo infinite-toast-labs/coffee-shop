@@ -1,0 +1,135 @@
+name: Deploy Preview
+
+on:
+  push:
+    branches-ignore:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: coffee-shop-preview
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_WORKERS_DEV_SUBDOMAIN: ${{ vars.CLOUDFLARE_WORKERS_DEV_SUBDOMAIN }}
+      COFFEE_BACKEND_D1_DATABASE_ID: ${{ secrets.COFFEE_BACKEND_D1_DATABASE_ID_PREVIEW }}
+      COFFEE_CACHE_KV_NAMESPACE_ID: ${{ secrets.COFFEE_CACHE_KV_NAMESPACE_ID_PREVIEW }}
+      COFFEE_ASSETS_R2_BUCKET_NAME: ${{ secrets.COFFEE_ASSETS_R2_BUCKET_NAME_PREVIEW }}
+      WORKERS_COMPATIBILITY_DATE: "2025-02-15"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compute preview names and tag
+        id: names
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${CLOUDFLARE_WORKERS_DEV_SUBDOMAIN:-}" ]]; then
+            echo "Missing vars.CLOUDFLARE_WORKERS_DEV_SUBDOMAIN" >&2
+            exit 1
+          fi
+
+          branch_raw="${GITHUB_REF_NAME}"
+          branch_safe="$(echo "$branch_raw" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+|-+$//g')"
+          short_sha="${GITHUB_SHA::7}"
+          tag="${branch_safe}@${short_sha}"
+
+          backend="coffee-shop-backend-preview"
+          frontend="coffee-shop-frontend-preview"
+          backend_url="https://${backend}.${CLOUDFLARE_WORKERS_DEV_SUBDOMAIN}.workers.dev"
+          frontend_url="https://${frontend}.${CLOUDFLARE_WORKERS_DEV_SUBDOMAIN}.workers.dev"
+
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "backend=${backend}" >> "$GITHUB_OUTPUT"
+          echo "frontend=${frontend}" >> "$GITHUB_OUTPUT"
+          echo "backend_url=${backend_url}" >> "$GITHUB_OUTPUT"
+          echo "frontend_url=${frontend_url}" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy backend (preview)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd app-backend
+
+          node ../scripts/render-wrangler-ci.mjs backend wrangler.ci.toml \
+            --name "${{ steps.names.outputs.backend }}" \
+            --workers-dev true \
+            --compatibility-date "${WORKERS_COMPATIBILITY_DATE}" \
+            --app-origin "${{ steps.names.outputs.frontend_url }}" \
+            --api-origin "${{ steps.names.outputs.backend_url }}" \
+            --d1-database-id "${COFFEE_BACKEND_D1_DATABASE_ID}" \
+            --kv-namespace-id "${COFFEE_CACHE_KV_NAMESPACE_ID}" \
+            --r2-bucket-name "${COFFEE_ASSETS_R2_BUCKET_NAME}"
+
+          npx wrangler d1 migrations apply DB --remote --config wrangler.ci.toml
+          npx wrangler versions upload --config wrangler.ci.toml \
+            --tag "${{ steps.names.outputs.tag }}" \
+            --message "Preview backend ${GITHUB_REF_NAME}@${GITHUB_SHA::7}"
+
+          VERSION_ID=$(npx wrangler versions list --name "${{ steps.names.outputs.backend }}" --json | \
+            node -e 'const fs=require("fs");const tag=process.env.TAG;const data=JSON.parse(fs.readFileSync(0,"utf8"));const match=data.find(v=>v.tag===tag||v.tag?.name===tag);if(!match){console.error("Version tag not found");process.exit(1);}const id=match.id||match.version_id||match.versionId;if(!id){console.error("Version id not found");process.exit(1);}console.log(id);' \
+          )
+
+          npx wrangler versions deploy --name "${{ steps.names.outputs.backend }}" --version-id "$VERSION_ID" \
+            --message "Deploy ${GITHUB_REF_NAME}@${GITHUB_SHA::7}"
+        env:
+          TAG: ${{ steps.names.outputs.tag }}
+
+      - name: Build frontend (preview)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd app-frontend
+
+          cat > .env.production <<EOF
+          PUBLIC_API_BASE=${{ steps.names.outputs.backend_url }}
+          EOF
+
+          npm run build
+
+      - name: Deploy frontend (preview)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd app-frontend
+
+          node ../scripts/render-wrangler-ci.mjs frontend wrangler.ci.toml \
+            --name "${{ steps.names.outputs.frontend }}" \
+            --workers-dev true \
+            --compatibility-date "${WORKERS_COMPATIBILITY_DATE}"
+
+          npx wrangler versions upload --config wrangler.ci.toml \
+            --tag "${{ steps.names.outputs.tag }}" \
+            --message "Preview frontend ${GITHUB_REF_NAME}@${GITHUB_SHA::7}"
+
+          VERSION_ID=$(npx wrangler versions list --name "${{ steps.names.outputs.frontend }}" --json | \
+            node -e 'const fs=require("fs");const tag=process.env.TAG;const data=JSON.parse(fs.readFileSync(0,"utf8"));const match=data.find(v=>v.tag===tag||v.tag?.name===tag);if(!match){console.error("Version tag not found");process.exit(1);}const id=match.id||match.version_id||match.versionId;if(!id){console.error("Version id not found");process.exit(1);}console.log(id);' \
+          )
+
+          npx wrangler versions deploy --name "${{ steps.names.outputs.frontend }}" --version-id "$VERSION_ID" \
+            --message "Deploy ${GITHUB_REF_NAME}@${GITHUB_SHA::7}"
+        env:
+          TAG: ${{ steps.names.outputs.tag }}
+
+      - name: Preview URLs
+        run: |
+          echo "Frontend: ${{ steps.names.outputs.frontend_url }}"
+          echo "Backend:  ${{ steps.names.outputs.backend_url }}"

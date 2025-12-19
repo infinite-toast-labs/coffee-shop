@@ -1,0 +1,29 @@
+name = "coffee-shop-backend"
+main = "../../app-backend/src/index.ts"
+compatibility_date = "2025-02-15"
+workers_dev = true
+
+[vars]
+APP_ORIGIN = "https://frontend.example.workers.dev"
+API_ORIGIN = "https://backend.example.workers.dev"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "coffee_shop_prod"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+migrations_dir = "../../app-backend/migrations"
+
+[[r2_buckets]]
+binding = "ASSETS"
+bucket_name = "coffee-shop-assets-prod"
+preview_bucket_name = "coffee-shop-assets-prod"
+
+[[kv_namespaces]]
+binding = "CACHE"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+preview_id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+# Optional routes (not used for workers.dev)
+#[[routes]]
+#pattern = "api.example.com/*"
+#zone_id = "REPLACE_WITH_ZONE_ID"

@@ -1,0 +1,20 @@
+{
+  "name": "coffee-shop",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "app-frontend",
+    "app-backend"
+  ],
+  "scripts": {
+    "dev:frontend": "npm --workspace app-frontend run dev",
+    "dev:backend": "npm --workspace app-backend run dev",
+    "build:frontend": "npm --workspace app-frontend run build",
+    "lint": "npm --workspace app-backend run lint && npm --workspace app-frontend run lint",
+    "typecheck": "npm --workspace app-backend run typecheck && npm --workspace app-frontend run typecheck",
+    "test": "npm --workspace app-backend run test"
+  },
+  "devDependencies": {
+    "wrangler": "^4.56.0"
+  }
+}

@@ -1,0 +1,24 @@
+name = "coffee-shop-backend-dev"
+main = "../../app-backend/src/index.ts"
+compatibility_date = "2025-02-15"
+workers_dev = true
+
+[vars]
+APP_ORIGIN = "http://localhost:4321"
+API_ORIGIN = "http://localhost:8787"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "coffee_shop_local"
+database_id = "local"
+migrations_dir = "../../app-backend/migrations"
+
+[[r2_buckets]]
+binding = "ASSETS"
+bucket_name = "coffee-shop-assets-local"
+preview_bucket_name = "coffee-shop-assets-local"
+
+[[kv_namespaces]]
+binding = "CACHE"
+id = "coffee-shop-cache-local"
+preview_id = "coffee-shop-cache-local"

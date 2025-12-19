@@ -1,0 +1,296 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const title = "Coffee Shop Demo";
+const description = "Minimal Cloudflare Workers demo with D1, KV, and R2.";
+const apiBase = import.meta.env.PUBLIC_API_BASE ?? "http://localhost:8787";
+const permalink = Astro.url.href;
+---
+
+<BaseLayout title={title} description={description} permalink={permalink}>
+  <div id="app-root" data-api-base={apiBase}>
+    <section class="panel">
+    <h1>Coffee Shop</h1>
+    <p>
+      This app is a minimal full-stack demo: Astro frontend + Hono backend on Cloudflare Workers.
+      It uses D1 for messages, KV for caching, and R2 for text storage.
+    </p>
+    </section>
+
+    <section class="panel grid">
+    <div class="card">
+      <h2>Add a message</h2>
+      <form id="message-form">
+        <label for="message-input">Message</label>
+        <input id="message-input" name="message" type="text" placeholder="Hello from D1" required maxlength="200" />
+        <button type="submit">Save message</button>
+        <p id="message-status" class="status"></p>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Upload text to R2</h2>
+      <form id="asset-form">
+        <label for="asset-input">Text</label>
+        <textarea id="asset-input" name="asset" rows="4" placeholder="R2 stores this text" required></textarea>
+        <label for="asset-key">Optional key</label>
+        <input id="asset-key" name="key" type="text" placeholder="coffee-note.txt" />
+        <button type="submit">Store text</button>
+        <p id="asset-status" class="status"></p>
+      </form>
+    </div>
+    </section>
+
+    <section class="panel">
+    <h2>Messages (D1 + KV cache)</h2>
+    <p id="messages-error" class="error"></p>
+    <ul id="messages-list" class="messages"></ul>
+    </section>
+
+    <section class="panel">
+    <h2>Fetch R2 text</h2>
+    <form id="asset-fetch-form" class="asset-fetch">
+      <label for="asset-fetch-key">Key</label>
+      <input id="asset-fetch-key" name="key" type="text" placeholder="coffee-note.txt" required />
+      <button type="submit">Fetch</button>
+    </form>
+    <pre id="asset-output" class="asset-output"></pre>
+    </section>
+  </div>
+</BaseLayout>
+
+<script is:inline type="module">
+  const root = document.querySelector("#app-root");
+  const apiBase = root?.dataset.apiBase || "http://localhost:8787";
+  const messagesList = document.querySelector("#messages-list");
+  const messagesError = document.querySelector("#messages-error");
+  const messageForm = document.querySelector("#message-form");
+  const messageInput = document.querySelector("#message-input");
+  const messageStatus = document.querySelector("#message-status");
+  const assetForm = document.querySelector("#asset-form");
+  const assetInput = document.querySelector("#asset-input");
+  const assetKey = document.querySelector("#asset-key");
+  const assetStatus = document.querySelector("#asset-status");
+  const assetFetchForm = document.querySelector("#asset-fetch-form");
+  const assetFetchKey = document.querySelector("#asset-fetch-key");
+  const assetOutput = document.querySelector("#asset-output");
+
+  const requestJson = async (path, options = {}) => {
+    const response = await fetch(`${apiBase}${path}`, {
+      headers: {
+        "Content-Type": "application/json",
+      },
+      ...options,
+    });
+
+    const payload = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      const error = new Error(payload?.error || "Request failed");
+      error.code = payload?.code;
+      error.detail = payload?.detail;
+      throw error;
+    }
+
+    return payload;
+  };
+
+  const handleApiError = (error, fallback) => {
+    if (error?.code === "DB_NOT_READY") {
+      const message =
+        "Database not initialized for this environment. Run D1 migrations and redeploy.";
+      console.warn("D1 not ready:", error.detail || error);
+      return message;
+    }
+
+    console.error("API error:", error);
+    return fallback;
+  };
+
+  const renderMessages = (items) => {
+    messagesList.innerHTML = "";
+    items.forEach((message) => {
+      const li = document.createElement("li");
+      const createdAt = message.created_at ? new Date(message.created_at).toLocaleString() : "";
+      li.innerHTML = `<strong>${message.content}</strong><span>${createdAt}</span>`;
+      messagesList.appendChild(li);
+    });
+  };
+
+  const loadMessages = async () => {
+    messagesError.textContent = "";
+    try {
+      const data = await requestJson("/api/messages");
+      renderMessages(data.messages || []);
+    } catch (error) {
+      messagesError.textContent = handleApiError(error, "Unable to load messages.");
+    }
+  };
+
+  messageForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    messageStatus.textContent = "Saving...";
+    try {
+      const payload = await requestJson("/api/messages", {
+        method: "POST",
+        body: JSON.stringify({ content: messageInput.value }),
+      });
+      messageInput.value = "";
+      messageStatus.textContent = `Saved: ${payload.message?.content || ""}`;
+      await loadMessages();
+    } catch (error) {
+      messageStatus.textContent = handleApiError(error, "Failed to save message.");
+    }
+  });
+
+  assetForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    assetStatus.textContent = "Uploading...";
+    try {
+      const payload = await requestJson("/api/assets", {
+        method: "POST",
+        body: JSON.stringify({
+          content: assetInput.value,
+          key: assetKey.value || undefined,
+        }),
+      });
+      assetStatus.textContent = `Stored in R2 as ${payload.key}`;
+      assetInput.value = "";
+      assetKey.value = "";
+    } catch (error) {
+      assetStatus.textContent = handleApiError(error, "Failed to upload text.");
+    }
+  });
+
+  assetFetchForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    assetOutput.textContent = "Loading...";
+    try {
+      const response = await fetch(`${apiBase}/api/assets/${encodeURIComponent(assetFetchKey.value)}`);
+      if (!response.ok) {
+        throw new Error(`Fetch failed (${response.status})`);
+      }
+      assetOutput.textContent = await response.text();
+    } catch (error) {
+      console.error("Asset fetch error:", error);
+      assetOutput.textContent = "Unable to fetch asset. Check the key and try again.";
+    }
+  });
+
+  loadMessages();
+</script>
+
+<style>
+  :global(body) {
+    background: linear-gradient(135deg, #f6f1ea 0%, #ffffff 60%);
+  }
+
+  .panel {
+    background: #ffffff;
+    border: 1px solid #eadfce;
+    border-radius: 16px;
+    box-shadow: 0 12px 30px rgba(44, 24, 16, 0.08);
+    margin: 1.5rem auto;
+    max-width: 960px;
+    padding: 2rem;
+  }
+
+  .grid {
+    display: grid;
+    gap: 1.5rem;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  }
+
+  .card {
+    background: #fef8f0;
+    border: 1px solid #f0e2cf;
+    border-radius: 12px;
+    padding: 1.5rem;
+  }
+
+  h1,
+  h2 {
+    color: #2c1810;
+  }
+
+  label {
+    display: block;
+    font-weight: 600;
+    margin: 0.75rem 0 0.25rem;
+  }
+
+  input,
+  textarea {
+    border: 1px solid #d6c4ae;
+    border-radius: 8px;
+    font-size: 1rem;
+    padding: 0.65rem;
+    width: 100%;
+  }
+
+  button {
+    background: #6b3f2c;
+    border: none;
+    border-radius: 999px;
+    color: #fff;
+    cursor: pointer;
+    font-weight: 600;
+    margin-top: 0.75rem;
+    padding: 0.65rem 1.4rem;
+  }
+
+  button:hover {
+    background: #5a3425;
+  }
+
+  .status {
+    color: #4a2e22;
+    margin-top: 0.5rem;
+  }
+
+  .error {
+    color: #b34722;
+    font-weight: 600;
+  }
+
+  .messages {
+    list-style: none;
+    margin: 1rem 0 0;
+    padding: 0;
+  }
+
+  .messages li {
+    border-bottom: 1px solid #f0e2cf;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.75rem 0;
+  }
+
+  .messages span {
+    color: #6f5a4a;
+    font-size: 0.85rem;
+  }
+
+  .asset-fetch {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+
+  .asset-output {
+    background: #1b1b1b;
+    border-radius: 12px;
+    color: #f6f1ea;
+    min-height: 120px;
+    padding: 1rem;
+    white-space: pre-wrap;
+  }
+
+  @media (max-width: 700px) {
+    .panel {
+      padding: 1.5rem;
+    }
+  }
+</style>

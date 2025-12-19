@@ -1,0 +1,36 @@
+# Dependencies / build output
+node_modules/
+dist/
+.astro/
+.svelte-kit/
+.wrangler/
+coverage/
+.nyc_output/
+
+# Local env files
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Wrangler local secrets
+config/local/.dev.vars
+.dev.vars
+
+# CI-generated Wrangler configs
+**/wrangler.ci.toml
+
+# OS / editor
+.DS_Store
+*.log
+*.tsbuildinfo
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Potential credential files
+*.pem
+*.key
+.npmrc
