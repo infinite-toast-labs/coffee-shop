@@ -50,7 +50,18 @@ jobs:
           branch_raw="${GITHUB_REF_NAME}"
           branch_safe="$(echo "$branch_raw" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+|-+$//g')"
           short_sha="${GITHUB_SHA::7}"
-          tag="${branch_safe}@${short_sha}"
+          max_tag_length=25
+          separator="@"
+          max_prefix_length=$((max_tag_length - ${#short_sha} - ${#separator}))
+          if (( max_prefix_length < 1 )); then
+            echo "Cannot build a tag within ${max_tag_length} characters" >&2
+            exit 1
+          fi
+          prefix="${branch_safe:0:$max_prefix_length}"
+          if [[ -z "$prefix" ]]; then
+            prefix="preview"
+          fi
+          tag="${prefix}@${short_sha}"
 
           backend="coffee-shop-backend-preview"
           frontend="coffee-shop-frontend-preview"
